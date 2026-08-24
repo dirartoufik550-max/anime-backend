@@ -11,14 +11,17 @@ const PORT = process.env.PORT || 10000;
 const MONGO_URI = process.env.MONGODB_URI;
 const BASE_DOMAIN = process.env.BASE_URL || 'https://anime-backend-bvuj.onrender.com';
 
+// تفعيل CORS والـ JSON
 app.use(cors());
 app.use(express.json());
 
+// تسجيل جميع الطلبات القادمة للسيرفر
 app.use((req, res, next) => {
   console.log(`>>> [REQUEST] ${req.method} ${req.url}`);
   next();
 });
 
+// دالة تنسيق بيانات الأنمي للكتالوج
 const formatAnimeForMovieModel = (doc) => {
   const item = doc.toObject ? doc.toObject() : doc;
   return {
@@ -35,13 +38,14 @@ const formatAnimeForMovieModel = (doc) => {
     genres: Array.isArray(item.genres) && item.genres.length > 0 ? item.genres : ["Action", "Adventure"],
     servers: [
       {
-        server_name: "سيرفر سحابي رئيسي (1080p)",
+        server_name: "سيرفر SoraPlay مباشر (FHD)",
         stream_url: `${BASE_DOMAIN}/api/stream/${item._id ? item._id.toString() : ""}/1`
       }
     ]
   };
 };
 
+// دالة توليد قائمة الحلقات
 const generateFullEpisodesList = (doc) => {
   const eps = [];
   const count = doc.totalEpisodesCount || 24;
@@ -53,9 +57,9 @@ const generateFullEpisodesList = (doc) => {
       title: `الحلقة ${i}`,
       sources: [
         {
-          quality: "Auto (HLS/Multi)",
+          quality: "FHD (Direct MP4)",
           url: `${BASE_DOMAIN}/api/stream/${animeId}/${i}`,
-          isHLS: true
+          isHLS: false
         }
       ],
       subtitles: [
@@ -146,12 +150,18 @@ app.get('/api/anime/:id', async (req, res) => {
 });
 
 // ==========================================
+// مسار اختبار فوري ونظيف بدون كاش
+// ==========================================
+app.get('/test-play', (req, res) => {
+  const directMp4Url = "https://soraplay.xyz/FibCU10knKEu8/0708b953cfaaa48084c05e46b3b87931/%5BWitanime.com%5D+JK+EP+01+BD-FHD-480p.mp4";
+  return res.redirect(302, directMp4Url);
+});
+
+// ==========================================
 // مسار البث المباشر (Direct Stream Route)
 // ==========================================
 app.get('/api/stream/:animeId/:epNum', (req, res) => {
-  // رابط الفيديو المباشر من سيرفر SoraPlay
   const directMp4Url = "https://soraplay.xyz/FibCU10knKEu8/0708b953cfaaa48084c05e46b3b87931/%5BWitanime.com%5D+JK+EP+01+BD-FHD-480p.mp4";
-  
   return res.redirect(302, directMp4Url);
 });
 
@@ -177,7 +187,7 @@ app.get('/api/subtitles/:animeId/:epNum', async (req, res) => {
       }
     }
 
-    res.send(`WEBVTT\n\n00:00:01.000 --> 00:00:06.000\n[ترجمة تلقائية - الحلقة ${epNum}]\n00:00:07.000 --> 00:00:12.000\nمشاهدة ممتعة.`);
+    res.send(`WEBVTT\n\n00:00:01.000 --> 00:00:06.000\n[ترجمة عربية - الحلقة ${epNum}]\n00:00:07.000 --> 00:00:12.000\nمشاهدة ممتعة.`);
   } catch (err) {
     res.status(500).send("WEBVTT\n\n00:00:01.000 --> 00:00:05.000\nحدث خطأ في جلب الترجمة");
   }
@@ -191,7 +201,7 @@ app.get('/', (req, res) => {
 });
 
 // ==========================================
-// تشغيل السيرفر والمزامنة التلقائية
+// تشغيل السيرفر وقاعدة البيانات
 // ==========================================
 mongoose.connect(MONGO_URI)
   .then(async () => {
