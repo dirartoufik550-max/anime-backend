@@ -5,11 +5,12 @@ const cors = require('cors');
 const cron = require('node-cron');
 const Anime = require('./models/Anime');
 const { runAutoIngest } = require('./services/autoIngest');
-const { getDirectAnimeStream } = require('./services/streamProvider');
+const { extractFromMegaCloud } = require('./services/streamProvider');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 const MONGO_URI = process.env.MONGODB_URI;
+const BASE_DOMAIN = process.env.BASE_URL || 'https://anime-backend-bvuj.onrender.com';
 
 app.use(cors());
 app.use(express.json());
@@ -35,8 +36,8 @@ const formatAnimeForMovieModel = (doc) => {
     genres: Array.isArray(item.genres) && item.genres.length > 0 ? item.genres : ["Action", "Adventure"],
     servers: [
       {
-        server_name: "سيرفر رئيسي (1080p)",
-        stream_url: "https://ia800300.us.archive.org/24/items/one-piece-ep-1_202303/One%20Piece%20Episode%201.mp4"
+        server_name: "سيرفر سحابي رئيسي (1080p)",
+        stream_url: "https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8"
       }
     ]
   };
@@ -54,14 +55,14 @@ const generateFullEpisodesList = (doc) => {
       sources: [
         {
           quality: "1080p (Auto)",
-          url: `http://192.168.1.3:3000/api/stream/${animeId}/${i}`,
-          isHLS: false
+          url: `${BASE_DOMAIN}/api/stream/${animeId}/${i}`,
+          isHLS: true
         }
       ],
       subtitles: [
         {
           lang: "Arabic",
-          url: `http://192.168.1.3:3000/api/subtitles/${animeId}/${i}`
+          url: `${BASE_DOMAIN}/api/subtitles/${animeId}/${i}`
         }
       ]
     });
@@ -70,7 +71,7 @@ const generateFullEpisodesList = (doc) => {
 };
 
 // ==========================================
-// مسارات الكتالوج (AnimeCatalog)
+// مسارات الكتالوج (Catalog Routes)
 // ==========================================
 app.get('/api/anime/trending', async (req, res) => {
   try {
@@ -146,40 +147,31 @@ app.get('/api/anime/:id', async (req, res) => {
 });
 
 // ==========================================
-// مسار البث المباشر (Direct Stream Engine)
+// مسار البث المباشر (HLS Dynamic Stream Route)
 // ==========================================
 app.get('/api/stream/:animeId/:epNum', async (req, res) => {
   try {
     const { animeId, epNum } = req.params;
-    let animeTitle = "one-piece";
+    let streamTarget = "https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8";
 
-    // 1. فحص قاعدة البيانات أولاً
     if (mongoose.Types.ObjectId.isValid(animeId)) {
       const anime = await Anime.findById(animeId);
-      if (anime) {
-        animeTitle = anime.title || "one-piece";
-
-        if (anime.episodes && anime.episodes.length > 0) {
-          const ep = anime.episodes.find(e => Number(e.episodeNumber) === Number(epNum));
-          if (ep && ep.streamUrl) {
-            return res.redirect(302, ep.streamUrl);
-          }
+      if (anime && anime.episodes && anime.episodes.length > 0) {
+        const ep = anime.episodes.find(e => Number(e.episodeNumber) === Number(epNum));
+        if (ep && ep.streamUrl) {
+          streamTarget = ep.streamUrl;
         }
       }
     }
 
-    // 2. استخدام محرك البث المباشر إذا لم تكن الحلقة مخزنة مسبقاً
-    const streamData = await getDirectAnimeStream(animeTitle, epNum);
-    return res.redirect(302, streamData.streamUrl);
-
+    return res.redirect(302, streamTarget);
   } catch (err) {
-    console.error('Stream Route Error:', err.message);
-    res.redirect(302, "https://ia800300.us.archive.org/24/items/one-piece-ep-1_202303/One%20Piece%20Episode%201.mp4");
+    return res.redirect(302, "https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8");
   }
 });
 
 // ==========================================
-// مسار الترجمة العربية المتزامنة (Gemini Subtitles)
+// مسار الترجمة العربية (VTT Subtitles Route)
 // ==========================================
 app.get('/api/subtitles/:animeId/:epNum', async (req, res) => {
   try {
@@ -200,14 +192,21 @@ app.get('/api/subtitles/:animeId/:epNum', async (req, res) => {
       }
     }
 
-    res.send(`WEBVTT\n\n00:00:01.000 --> 00:00:06.000\n[ترجمة عربية متزامنة - الحلقة ${epNum}]\n00:00:07.000 --> 00:00:12.000\nمشاهدة ممتعة.`);
+    res.send(`WEBVTT\n\n00:00:01.000 --> 00:00:06.000\n[ترجمة تلقائية - الحلقة ${epNum}]\n00:00:07.000 --> 00:00:12.000\nمشاهدة ممتعة.`);
   } catch (err) {
     res.status(500).send("WEBVTT\n\n00:00:01.000 --> 00:00:05.000\nحدث خطأ في جلب الترجمة");
   }
 });
 
 // ==========================================
-// تشغيل السيرفر والجدولة الآلية
+// فحص حالة السيرفر (Health Check)
+// ==========================================
+app.get('/', (req, res) => {
+  res.json({ status: "online", message: "Anime Backend API is running live 24/7 on Render" });
+});
+
+// ==========================================
+// تشغيل السيرفر والمزامنة التلقائية
 // ==========================================
 mongoose.connect(MONGO_URI)
   .then(async () => {
@@ -220,7 +219,7 @@ mongoose.connect(MONGO_URI)
     });
 
     app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server running on: http://192.168.1.3:${PORT}`);
+      console.log(`Server running on port ${PORT}`);
     });
   })
   .catch(err => {
