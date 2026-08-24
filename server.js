@@ -5,7 +5,7 @@ const cors = require('cors');
 const cron = require('node-cron');
 const Anime = require('./models/Anime');
 const { runAutoIngest } = require('./services/autoIngest');
-const { getAnimeEpisodeStream } = require('./services/streamProvider');
+const { getAnimeEpisodeStream, testMegaPlayStream } = require('./services/streamProvider');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -143,6 +143,26 @@ app.get('/api/anime/:id', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ==========================================
+// مسار الاختبار السريع (MegaPlay Test Endpoint)
+// ==========================================
+app.get('/api/test-stream', async (req, res) => {
+  try {
+    const malId = req.query.malId || 52299;
+    const ep = req.query.ep || 1;
+    const result = await testMegaPlayStream(malId, ep);
+    
+    if (result) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(result);
+    } else {
+      res.status(500).json({ error: "Failed to fetch embed stream page" });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
