@@ -2,155 +2,46 @@ require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const cron = require('node-cron');
-const Anime = require('./models/Anime');
-const { runAutoIngest } = require('./services/autoIngest');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 const MONGO_URI = process.env.MONGODB_URI;
 const BASE_DOMAIN = process.env.BASE_URL || 'https://anime-backend-bvuj.onrender.com';
 
-// تفعيل CORS والـ JSON
 app.use(cors());
 app.use(express.json());
 
-// تسجيل جميع الطلبات القادمة للسيرفر
 app.use((req, res, next) => {
   console.log(`>>> [REQUEST] ${req.method} ${req.url}`);
   next();
 });
 
-// دالة تنسيق بيانات الأنمي للكتالوج
-const formatAnimeForMovieModel = (doc) => {
-  const item = doc.toObject ? doc.toObject() : doc;
-  return {
-    ...item,
-    _id: item._id ? item._id.toString() : "",
-    title: item.title || "No Title",
-    japaneseTitle: item.japaneseTitle || item.title || "",
-    synopsis: item.synopsis || "No synopsis available.",
-    posterUrl: item.posterUrl || "",
-    bannerUrl: item.bannerUrl || item.posterUrl || "",
-    score: item.score || 8.5,
-    status: item.status || "Currently Airing",
-    category: item.category || "TV",
-    genres: Array.isArray(item.genres) && item.genres.length > 0 ? item.genres : ["Action", "Adventure"],
-    servers: [
-      {
-        server_name: "سيرفر SoraPlay مباشر (FHD)",
-        stream_url: `${BASE_DOMAIN}/api/stream/${item._id ? item._id.toString() : ""}/1`
-      }
-    ]
-  };
-};
+// ==========================================
+// 1. تشغيل السيرفر فوراً لضمان عدم حدوث Crash
+// ==========================================
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server is running live on port ${PORT}`);
+});
 
-// دالة توليد قائمة الحلقات
-const generateFullEpisodesList = (doc) => {
-  const eps = [];
-  const count = doc.totalEpisodesCount || 24;
-  const animeId = doc._id.toString();
-
-  for (let i = 1; i <= count; i++) {
-    eps.push({
-      episodeNumber: i,
-      title: `الحلقة ${i}`,
-      sources: [
-        {
-          quality: "FHD (Direct MP4)",
-          url: `${BASE_DOMAIN}/api/stream/${animeId}/${i}`,
-          isHLS: false
-        }
-      ],
-      subtitles: [
-        {
-          lang: "Arabic",
-          url: `${BASE_DOMAIN}/api/subtitles/${animeId}/${i}`
-        }
-      ]
-    });
-  }
-  return eps;
-};
+// محاولة الاتصال بقاعدة البيانات في الخلفية دون تعطيل السيرفر
+if (MONGO_URI) {
+  mongoose.connect(MONGO_URI)
+    .then(() => console.log('MongoDB Connected Successfully'))
+    .catch(err => console.error('MongoDB Connection Warning:', err.message));
+}
 
 // ==========================================
-// مسارات الكتالوج (Catalog Routes)
+// 2. فحص حالة السيرفر (Health Check)
 // ==========================================
-app.get('/api/anime/trending', async (req, res) => {
-  try {
-    const list = await Anime.find().sort({ score: -1 });
-    res.json({ success: true, count: list.length, data: list.map(formatAnimeForMovieModel) });
-  } catch (err) {
-    res.status(500).json({ success: false, count: 0, data: [] });
-  }
-});
-
-app.get('/api/anime/latest', async (req, res) => {
-  try {
-    const list = await Anime.find().sort({ updatedAt: -1 });
-    res.json({ success: true, count: list.length, data: list.map(formatAnimeForMovieModel) });
-  } catch (err) {
-    res.status(500).json({ success: false, count: 0, data: [] });
-  }
-});
-
-app.get('/api/anime/top-rated', async (req, res) => {
-  try {
-    const list = await Anime.find().sort({ score: -1 });
-    res.json({ success: true, count: list.length, data: list.map(formatAnimeForMovieModel) });
-  } catch (err) {
-    res.status(500).json({ success: false, count: 0, data: [] });
-  }
-});
-
-app.get('/api/anime/genre/:genreName', async (req, res) => {
-  try {
-    const genre = req.params.genreName;
-    const list = await Anime.find({
-      $or: [
-        { genres: { $regex: new RegExp(genre, "i") } },
-        { title: { $regex: new RegExp(genre, "i") } }
-      ]
-    });
-    res.json({ success: true, count: list.length, data: list.map(formatAnimeForMovieModel) });
-  } catch (err) {
-    res.status(500).json({ success: false, count: 0, data: [] });
-  }
+app.get('/', (req, res) => {
+  res.json({ 
+    status: "online", 
+    message: "Anime Backend API is running live 24/7 on Render" 
+  });
 });
 
 // ==========================================
-// مسار تفاصيل الأنمي وقائمة الحلقات
-// ==========================================
-app.get('/api/anime/:id', async (req, res) => {
-  try {
-    let anime = null;
-    const reqId = req.params.id;
-
-    if (mongoose.Types.ObjectId.isValid(reqId)) {
-      anime = await Anime.findById(reqId);
-    } else {
-      anime = await Anime.findOne({
-        $or: [{ _id: reqId }, { title: { $regex: new RegExp(reqId, "i") } }]
-      });
-    }
-
-    if (!anime) anime = await Anime.findOne();
-
-    const doc = anime.toObject ? anime.toObject() : anime;
-    res.json({
-      success: true,
-      data: {
-        ...doc,
-        episodes: generateFullEpisodesList(doc)
-      }
-    });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// ==========================================
-// مسار اختبار فوري ونظيف بدون كاش
+// 3. مسار اختبار فوري ومباشر
 // ==========================================
 app.get('/test-play', (req, res) => {
   const directMp4Url = "https://soraplay.xyz/FibCU10knKEu8/0708b953cfaaa48084c05e46b3b87931/%5BWitanime.com%5D+JK+EP+01+BD-FHD-480p.mp4";
@@ -158,7 +49,7 @@ app.get('/test-play', (req, res) => {
 });
 
 // ==========================================
-// مسار البث المباشر (Direct Stream Route)
+// 4. مسار البث المباشر المربوط بالتطبيق
 // ==========================================
 app.get('/api/stream/:animeId/:epNum', (req, res) => {
   const directMp4Url = "https://soraplay.xyz/FibCU10knKEu8/0708b953cfaaa48084c05e46b3b87931/%5BWitanime.com%5D+JK+EP+01+BD-FHD-480p.mp4";
@@ -166,57 +57,10 @@ app.get('/api/stream/:animeId/:epNum', (req, res) => {
 });
 
 // ==========================================
-// مسار الترجمة العربية (VTT Subtitles Route)
+// 5. مسار الترجمة العربية
 // ==========================================
-app.get('/api/subtitles/:animeId/:epNum', async (req, res) => {
-  try {
-    const { animeId, epNum } = req.params;
-    let anime = null;
-
-    if (mongoose.Types.ObjectId.isValid(animeId)) {
-      anime = await Anime.findById(animeId);
-    }
-
-    res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
-    res.setHeader('Access-Control-Allow-Origin', '*');
-
-    if (anime && anime.episodes && anime.episodes.length > 0) {
-      const ep = anime.episodes.find(e => Number(e.episodeNumber) === Number(epNum));
-      if (ep && ep.arabicVtt) {
-        return res.send(ep.arabicVtt);
-      }
-    }
-
-    res.send(`WEBVTT\n\n00:00:01.000 --> 00:00:06.000\n[ترجمة عربية - الحلقة ${epNum}]\n00:00:07.000 --> 00:00:12.000\nمشاهدة ممتعة.`);
-  } catch (err) {
-    res.status(500).send("WEBVTT\n\n00:00:01.000 --> 00:00:05.000\nحدث خطأ في جلب الترجمة");
-  }
+app.get('/api/subtitles/:animeId/:epNum', (req, res) => {
+  res.setHeader('Content-Type', 'text/vtt; charset=utf-8');
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.send(`WEBVTT\n\n00:00:01.000 --> 00:00:06.000\n[ترجمة عربية]\n00:00:07.000 --> 00:00:12.000\nمشاهدة ممتعة.`);
 });
-
-// ==========================================
-// فحص حالة السيرفر (Health Check)
-// ==========================================
-app.get('/', (req, res) => {
-  res.json({ status: "online", message: "Anime Backend API is running live 24/7 on Render" });
-});
-
-// ==========================================
-// تشغيل السيرفر وقاعدة البيانات
-// ==========================================
-mongoose.connect(MONGO_URI)
-  .then(async () => {
-    console.log('MongoDB Connected Successfully from .env');
-
-    runAutoIngest();
-
-    cron.schedule('0 */2 * * *', () => {
-      runAutoIngest();
-    });
-
-    app.listen(PORT, '0.0.0.0', () => {
-      console.log(`Server running on port ${PORT}`);
-    });
-  })
-  .catch(err => {
-    console.error('MongoDB Connection Error:', err.message);
-  });
