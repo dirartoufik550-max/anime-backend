@@ -5,7 +5,6 @@ const cors = require('cors');
 const cron = require('node-cron');
 const Anime = require('./models/Anime');
 const { runAutoIngest } = require('./services/autoIngest');
-const { getAnimeEpisodeStream, testMegaPlayStream } = require('./services/streamProvider');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -147,73 +146,13 @@ app.get('/api/anime/:id', async (req, res) => {
 });
 
 // ==========================================
-// مسار مشغل التضمين المباشر (Embed Player Route)
+// مسار البث المباشر (Direct Stream Route)
 // ==========================================
-app.get('/player/:malId/:ep', (req, res) => {
-  const { malId, ep } = req.params;
-  const embedUrl = `https://megaplay.buzz/stream/mal/${malId}/${ep}/sub`;
-
-  const html = `
-    <!DOCTYPE html>
-    <html lang="ar">
-    <head>
-      <meta charset="UTF-8">
-      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-      <title>مشغل الفيديو</title>
-      <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; background: #000; }
-        html, body { width: 100%; height: 100%; overflow: hidden; }
-        iframe { width: 100%; height: 100%; border: none; }
-      </style>
-    </head>
-    <body>
-      <iframe src="${embedUrl}" allowfullscreen allow="autoplay; fullscreen; encrypted-media"></iframe>
-    </body>
-    </html>
-  `;
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.send(html);
-});
-
-// ==========================================
-// مسار الاختبار السريع (MegaPlay Test Endpoint)
-// ==========================================
-app.get('/api/test-stream', async (req, res) => {
-  try {
-    const malId = req.query.malId || 52299;
-    const ep = req.query.ep || 1;
-    const result = await testMegaPlayStream(malId, ep);
-    
-    if (result) {
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      res.send(result);
-    } else {
-      res.status(500).json({ error: "Failed to fetch embed stream page" });
-    }
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// ==========================================
-// مسار البث المباشر (HLS Dynamic Stream Route)
-// ==========================================
-app.get('/api/stream/:animeId/:epNum', async (req, res) => {
-  try {
-    const { animeId, epNum } = req.params;
-    let animeTitle = "Solo Leveling";
-
-    if (mongoose.Types.ObjectId.isValid(animeId)) {
-      const anime = await Anime.findById(animeId);
-      if (anime && anime.title) animeTitle = anime.title;
-    }
-
-    const streamData = await getAnimeEpisodeStream(animeTitle, epNum);
-    return res.redirect(302, streamData.streamUrl);
-  } catch (err) {
-    console.error('Stream Route Error:', err.message);
-    return res.redirect(302, "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4");
-  }
+app.get('/api/stream/:animeId/:epNum', (req, res) => {
+  // رابط الفيديو المباشر من سيرفر SoraPlay
+  const directMp4Url = "https://soraplay.xyz/FibCU10knKEu8/0708b953cfaaa48084c05e46b3b87931/%5BWitanime.com%5D+JK+EP+01+BD-FHD-480p.mp4";
+  
+  return res.redirect(302, directMp4Url);
 });
 
 // ==========================================
