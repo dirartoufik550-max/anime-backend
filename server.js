@@ -5,7 +5,7 @@ const cors = require('cors');
 const cron = require('node-cron');
 const Anime = require('./models/Anime');
 const { runAutoIngest } = require('./services/autoIngest');
-const { extractFromMegaCloud } = require('./services/streamProvider');
+const { getAnimeEpisodeStream } = require('./services/streamProvider');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -152,20 +152,29 @@ app.get('/api/anime/:id', async (req, res) => {
 app.get('/api/stream/:animeId/:epNum', async (req, res) => {
   try {
     const { animeId, epNum } = req.params;
-    let streamTarget = "https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8";
+    let animeTitle = "one piece";
 
     if (mongoose.Types.ObjectId.isValid(animeId)) {
       const anime = await Anime.findById(animeId);
-      if (anime && anime.episodes && anime.episodes.length > 0) {
-        const ep = anime.episodes.find(e => Number(e.episodeNumber) === Number(epNum));
-        if (ep && ep.streamUrl) {
-          streamTarget = ep.streamUrl;
+      if (anime) {
+        animeTitle = anime.title || "one piece";
+
+        // فحص إذا كانت الحلقة محددة مسبقاً برابط ثابت
+        if (anime.episodes && anime.episodes.length > 0) {
+          const ep = anime.episodes.find(e => Number(e.episodeNumber) === Number(epNum));
+          if (ep && ep.streamUrl && ep.streamUrl.includes('.m3u8')) {
+            return res.redirect(302, ep.streamUrl);
+          }
         }
       }
     }
 
-    return res.redirect(302, streamTarget);
+    // استخراج رابط البث من محرك streamProvider بناءً على اسم الأنمي ورقم الحلقة
+    const streamData = await getAnimeEpisodeStream(animeTitle, epNum);
+    return res.redirect(302, streamData.streamUrl);
+
   } catch (err) {
+    console.error('Stream Route Error:', err.message);
     return res.redirect(302, "https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8");
   }
 });
