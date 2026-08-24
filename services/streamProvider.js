@@ -1,40 +1,54 @@
 const axios = require('axios');
+const cheerio = require('cheerio');
 
 async function getAnimeEpisodeStream(animeTitle, episodeNum = 1) {
   try {
-    // 1. استخدام معرف MAL الافتراضي أو البحث عن العمل
-    const malId = 52299; // Solo Leveling كمثال افتراضي
-    const embedUrl = `https://megaplay.buzz/stream/mal/${malId}/${episodeNum}/sub`;
+    // رابط الحلقة المباشر من WitAnime
+    // ملاحظة: يمكنك بناء الرابط ديناميكياً بحسب اسم الأنمي ورقم الحلقة
+    const targetUrl = `https://witanime.you/episode/jujutsu-kaisen-%d8%a7%d9%84%d8%ad%d9%84%d9%82%d8%a9-${episodeNum}/`;
 
-    const response = await axios.get(embedUrl, {
+    const response = await axios.get(targetUrl, {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Referer': 'https://megaplay.buzz/'
+        'Referer': 'https://witanime.you/'
       },
       timeout: 10000
     });
 
-    const html = response.data;
+    const $ = cheerio.load(response.data);
+    
+    // 1. البحث عن روابط سيرفرات المشاهدة المضمنة داخل الصفحة
+    let videoStreamUrl = null;
 
-    // 2. البحث عن مسار ملف HLS (.m3u8) أو رابط السيرفر المباشر داخل كود الصفحة
-    const m3u8Match = html.match(/(https?:\/\/[^"']+\.m3u8[^"']*)/i);
-    const iframeMatch = html.match(/src=["'](https?:\/\/[^"']+)["']/i);
+    // استخراج أول سيرفر مشاهدة متاح (سيرفرات الـ Iframe أو روابط التحميل المباشرة)
+    $('ul#episode-servers li a').each((i, el) => {
+      const serverUrl = $(el).attr('data-ep-url') || $(el).attr('href');
+      if (serverUrl && !videoStreamUrl) {
+        videoStreamUrl = serverUrl;
+      }
+    });
 
-    if (m3u8Match && m3u8Match[1]) {
-      return { streamUrl: m3u8Match[1], isHLS: true };
+    // 2. إذا لم تكن في قائمة السيرفرات، نفحص روابط أزرار التحميل المباشرة (الجودة العالية HD)
+    if (!videoStreamUrl) {
+      $('a.download-button').each((i, el) => {
+        const downloadUrl = $(el).attr('href');
+        if (downloadUrl && downloadUrl.includes('.mp4')) {
+          videoStreamUrl = downloadUrl;
+        }
+      });
     }
 
-    if (iframeMatch && iframeMatch[1]) {
-      return { streamUrl: iframeMatch[1], isHLS: false };
+    if (videoStreamUrl) {
+      return { streamUrl: videoStreamUrl, isHLS: videoStreamUrl.includes('.m3u8') };
     }
 
-    // رابط احتياطي مباشر في حال كانت الحلقة تحتاج مفتاح فك تشفير إضافي
+    // رابط احتياطي
     return {
       streamUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
       isHLS: false
     };
-  } catch (err) {
-    console.error('Stream Extraction Error:', err.message);
+  } catch (error) {
+    console.error('WitAnime Extraction Error:', error.message);
     return {
       streamUrl: "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
       isHLS: false
