@@ -37,7 +37,7 @@ const formatAnimeForMovieModel = (doc) => {
     servers: [
       {
         server_name: "سيرفر سحابي رئيسي (1080p)",
-        stream_url: "https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8"
+        stream_url: `${BASE_DOMAIN}/api/stream/${item._id ? item._id.toString() : ""}/1`
       }
     ]
   };
@@ -54,7 +54,7 @@ const generateFullEpisodesList = (doc) => {
       title: `الحلقة ${i}`,
       sources: [
         {
-          quality: "1080p (Auto)",
+          quality: "Auto (HLS/Multi)",
           url: `${BASE_DOMAIN}/api/stream/${animeId}/${i}`,
           isHLS: true
         }
@@ -152,30 +152,18 @@ app.get('/api/anime/:id', async (req, res) => {
 app.get('/api/stream/:animeId/:epNum', async (req, res) => {
   try {
     const { animeId, epNum } = req.params;
-    let animeTitle = "one piece";
+    let animeTitle = "Solo Leveling";
 
     if (mongoose.Types.ObjectId.isValid(animeId)) {
       const anime = await Anime.findById(animeId);
-      if (anime) {
-        animeTitle = anime.title || "one piece";
-
-        // فحص إذا كانت الحلقة محددة مسبقاً برابط ثابت
-        if (anime.episodes && anime.episodes.length > 0) {
-          const ep = anime.episodes.find(e => Number(e.episodeNumber) === Number(epNum));
-          if (ep && ep.streamUrl && ep.streamUrl.includes('.m3u8')) {
-            return res.redirect(302, ep.streamUrl);
-          }
-        }
-      }
+      if (anime && anime.title) animeTitle = anime.title;
     }
 
-    // استخراج رابط البث من محرك streamProvider بناءً على اسم الأنمي ورقم الحلقة
     const streamData = await getAnimeEpisodeStream(animeTitle, epNum);
     return res.redirect(302, streamData.streamUrl);
-
   } catch (err) {
     console.error('Stream Route Error:', err.message);
-    return res.redirect(302, "https://cph-p2p-msl.akamaized.net/hls/live/2000341/test/master.m3u8");
+    return res.redirect(302, "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4");
   }
 });
 
