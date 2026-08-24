@@ -147,6 +147,35 @@ app.get('/api/anime/:id', async (req, res) => {
 });
 
 // ==========================================
+// مسار مشغل التضمين المباشر (Embed Player Route)
+// ==========================================
+app.get('/player/:malId/:ep', (req, res) => {
+  const { malId, ep } = req.params;
+  const embedUrl = `https://megaplay.buzz/stream/mal/${malId}/${ep}/sub`;
+
+  const html = `
+    <!DOCTYPE html>
+    <html lang="ar">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+      <title>مشغل الفيديو</title>
+      <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; background: #000; }
+        html, body { width: 100%; height: 100%; overflow: hidden; }
+        iframe { width: 100%; height: 100%; border: none; }
+      </style>
+    </head>
+    <body>
+      <iframe src="${embedUrl}" allowfullscreen allow="autoplay; fullscreen; encrypted-media"></iframe>
+    </body>
+    </html>
+  `;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
+});
+
+// ==========================================
 // مسار الاختبار السريع (MegaPlay Test Endpoint)
 // ==========================================
 app.get('/api/test-stream', async (req, res) => {
